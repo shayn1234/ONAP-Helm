@@ -1,0 +1,30 @@
+imports:
+  - http://www.getcloudify.org/spec/cloudify/3.3/types.yaml
+
+node_types:
+  cloudify.nodes.Helm:
+    derived_from: cloudify.types.SoftwareComponent
+    relationships:
+        type: cloudify.relationships.contained_in
+        target: k8s master 
+
+
+node_templates:
+  k8s_master:
+
+  mso:
+    type: cloudify.nodes.Helm
+    interfaces:
+      cloudify.interfaces.lifecycle:
+        start:
+          implementation: Helminstall.sh
+          inputs:
+            process:
+              cwd: /home/centos/onap/oom/kubernetes/oneclick
+              args: [onap, mso]
+        stop:
+          implementation: Helmdelete.sh
+          inputs:
+            process:
+              cwd: /home/centos/onap/oom/kubernetes/oneclick
+              args: [onap, mso]
