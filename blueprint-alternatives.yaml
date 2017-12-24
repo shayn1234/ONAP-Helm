@@ -1,0 +1,156 @@
+imports:
+  - http://www.getcloudify.org/spec/cloudify/3.4.2/types.yaml
+  # - kubernetes-plugin.yaml
+  # - import fabric.
+
+inputs:
+  # For agent, toggle to true.
+  install_method:
+    default: false # For fabric use false.
+
+  # kubernetes_master_configuration:
+  #   default: {}
+  #     # apiVersion: v1
+  #     # kind: Config
+  #     # preferences: {}
+  #     # current-context: kubernetes-admin@kubernetes
+  #     # clusters:
+  #     # - name: kubernetes
+  #     #   cluster:
+  #     #     certificate-authority-data: { get_input: kubernetes_certificate_authority_data }
+  #     #     server: { concat: [ 'https://', { get_input: kubernetes_master_ip}, ':', { get_input: kubernetes_master_port } ] }
+  #     # contexts:
+  #     # - name: kubernetes-admin@kubernetes
+  #     #   context:
+  #     #     cluster: kubernetes
+  #     #     user: kubernetes-admin
+  #     # users:
+  #     # - name: kubernetes-admin
+  #     #   user:
+  #     #     client-certificate-data: { get_input: kubernetes-admin_client_certificate_data }
+  #     #     client-key-data:  { get_input: kubernetes-admin_client_key_data }
+
+
+node_types:
+  cloudify.nodes.Helm:
+    derived_from: cloudify.types.SoftwareComponent
+    properties:
+      cwd:
+        default: /home/centos/onap/oom/kubernetes/oneclick
+      args:
+        default:
+        - onap
+        - mso
+    interfaces:
+      cloudify.interfaces.lifecycle:
+        # This is for fabric: # Run Anywhere. (Except GKE/AKS/ECS)
+        start:
+          implementation: fabric.fabric_plugin.tasks.run_script
+          inputs:
+            script_path:
+              default: Helminstall.sh # Relative to the blueprint file.
+            env_vars:
+              default: &env_vars
+                cwd: { get_property: [ SELF, cwd ] }
+                args: { get_property: [ SELF, args ] }
+            fabric_env:
+              default: &fabric_env
+                user: { get_property: [ master, agent_config, user ] }
+                ip: { get_property: [ master, agent_config, ip ] }
+                key: { get_property: [ master, agent_config, key ] }
+        stop:
+          implementation: fabric.fabric_plugin.tasks.run_script
+          inputs:
+            script_path:
+              default: Helmdelete.sh
+            env_vars: 
+              default: *env_vars
+            fabric_env:
+              default: *fabric_env
+
+        # This is for an agent:
+        # start:
+        #   implementation: Helminstall.sh
+        #   inputs:
+        #     process:
+        #       default:
+        #         cwd: { get_property: [ SELF, cwd ] }
+        #         args: { get_property: [ SELF, args ] }
+        #     # process:
+        #     #   default:
+        #     #     cwd: /home/centos/onap/oom/kubernetes/oneclick
+        #     #     args: [onap, mso]
+        # stop:
+        #   implementation: Helmdelete.sh
+        #   # executor: central_deployment_agent # Will run on manager or on cfy-local.
+        #   executor: host_agent # This will only work on a machine with cloudify agent. (no cfy-local)
+        #   inputs:
+        #     process:
+        #       default:
+        #         cwd: { get_property: [ SELF, cwd ] }
+        #         args: { get_property: [ SELF, args ] }
+        #         # cwd: /home/centos/onap/oom/kubernetes/oneclick
+        #         # args: [onap, mso]
+
+  # cloudify.k8s.master:
+  #   derived_from: cloudify.nodes.Root
+  #   properties:
+  #     ip:
+  #       default: { get_input: k8s_master_ip }
+  #     ssh_key:
+  #       default: { get_input: path_to_key }
+  #     user:
+  #       default: { get_input: agent_user }
+
+node_templates:
+
+  # k8s_master:
+  #    type: cloudify.k8s.master
+
+  # This is a Agent-solution or a fabric solution.
+  # kubernetes_master_host:
+  #   type: cloudify.nodes.Compute
+  #   properties:
+  #     agent_config:
+  #       install_method: { get_input: install_method } # False for Fabric.
+  #       ip: { get_input: k8s_master_ip }
+  #       key: { get_input: path_to_key }
+  #       user: { get_input: agent_user }
+
+  # This is API solution.
+  # kubernetes_master:
+  #   type: cloudify.kubernetes.nodes.Master
+  #   properties:
+  #     configuration:
+  #       file_content: { get_input: kubernetes_master_configuration }
+
+  mso:
+    type: cloudify.nodes.Helm
+    relationships:
+        type: cloudify.relationships.contained_in
+        target: k8s_master 
+    # interfaces:
+    #   cloudify.interfaces.lifecycle:
+    #     start:
+    #       implementation: Helminstall.sh
+    #       inputs:
+    #         process:
+    #           cwd: /home/centos/onap/oom/kubernetes/oneclick
+    #           args: [onap, mso]
+    #     stop:
+    #       implementation: Helmdelete.sh
+    #       inputs:
+    #         process:
+    #           cwd: /home/centos/onap/oom/kubernetes/oneclick
+    #           args: [onap, mso]
+
+  policy:
+    type: cloudify.nodes.Helm
+    properties:
+      args:
+      - onap
+      - policy
+    relationships:
+      - type: cloudify.relationships.contained_in # For fabric use connected_to
+        target: k8s_master
+
