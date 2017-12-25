@@ -1,0 +1,113 @@
+imports:
+  - http://www.getcloudify.org/spec/cloudify/3.4.2/types.yaml
+  # - kubernetes-plugin.yaml
+  # - import fabric.
+
+inputs:
+  # For agent, toggle to true.
+  install_method:
+    default: false # For fabric use false.
+  ip:
+    default: "204.178.3.244"
+  key: 
+    default: k8s.pem
+  user:
+    default: centos
+
+node_types:
+  cloudify.nodes.Helm:
+    derived_from: cloudify.types.SoftwareComponent
+    properties:
+      cwd:
+        default: /home/centos/onap/oom/kubernetes/oneclick
+      args:
+        default:
+        - onap
+        - mso
+    interfaces:
+      cloudify.interfaces.lifecycle:
+        # This is for fabric: # Run Anywhere. (Except GKE/AKS/ECS)
+        # start:
+        #   implementation: fabric.fabric_plugin.tasks.run_script
+        #   inputs:
+        #     script_path:
+        #       default: Helminstall.sh # Relative to the blueprint file.
+        #     env_vars:
+        #       default: &env_vars
+        #         cwd: { get_property: [ SELF, cwd ] }
+        #         args: { get_property: [ SELF, args ] }
+        #     fabric_env:
+        #       default: &fabric_env
+        #         user: { get_property: [ master, agent_config, user ] }
+        #         ip: { get_property: [ master, agent_config, ip ] }
+        #         key: { get_property: [ master, agent_config, key ] }
+        # stop:
+        #   implementation: fabric.fabric_plugin.tasks.run_script
+        #   inputs:
+        #     script_path:
+        #       default: Helmdelete.sh
+        #     env_vars: 
+        #       default: *env_vars
+        #     fabric_env:
+        #       default: *fabric_env
+
+        # This is for an agent:
+        start:
+          implementation: Helminstall.sh
+          inputs:
+            process:
+              default:
+                cwd: { get_property: [ SELF, cwd ] }
+                args: { get_property: [ SELF, args ] }
+            
+        stop:
+          implementation: Helmdelete.sh
+          # executor: central_deployment_agent # Will run on manager or on cfy-local.
+          executor: host_agent # This will only work on a machine with cloudify agent. (no cfy-local)
+          inputs:
+            process:
+              default:
+                cwd: { get_property: [ SELF, cwd ] }
+                args: { get_property: [ SELF, args ] }
+                
+
+  # cloudify.k8s.master:
+  #   derived_from: cloudify.nodes.Root
+  #   properties:
+  #     ip:
+  #       default: { get_input: k8s_master_ip }
+  #     ssh_key:
+  #       default: { get_input: path_to_key }
+  #     user:
+  #       default: { get_input: agent_user }
+
+node_templates:
+  # This is a Agent-solution or a fabric solution.
+  k8s_master:
+     type: cloudify.nodes.Compute
+     properties:
+       agent_config:
+         install_method: { get_input: install_method } # False for Fabric.
+         ip: { get_input: k8s_master_ip }
+         key: { get_input: path_to_key }
+         user: { get_input: agent_user }
+
+  mso:
+    type: cloudify.nodes.Helm
+    properties:
+      args:
+      - onap
+      - mso
+    relationships:
+       -type: cloudify.relationships.contained_in
+        target: k8s_master 
+  
+  policy:
+    type: cloudify.nodes.Helm
+    properties:
+      args:
+      - onap
+      - policy
+    relationships:
+      - type: cloudify.relationships.contained_in # For fabric use connected_to
+        target: k8s_master
