@@ -1,0 +1,84 @@
+tosca_definitions_version: cloudify_dsl_1_3
+
+imports:
+  - http://www.getcloudify.org/spec/cloudify/3.4.2/types.yaml
+  - http://www.getcloudify.org/spec/fabric-plugin/1.4.1/plugin.yaml
+
+inputs:
+  # For agent, toggle to true.
+  install_method:
+    default: false # For fabric use false.
+  ip:
+    default: "10.239.0.62"
+  key: 
+    default: k8s.pem
+  user:
+    default: centos
+
+node_types:
+  cloudify.nodes.Helm:
+    derived_from: cloudify.nodes.SoftwareComponent
+    properties:
+      cwd:
+        default: /home/centos/onap/oom/kubernetes/oneclick
+      args:
+        default:
+        - onap
+        - mso
+    interfaces:
+      cloudify.interfaces.lifecycle:
+        # This is for fabric: # Run Anywhere. 
+        start:
+          implementation: fabric.fabric_plugin.tasks.run_script
+          inputs:
+            script_path:
+              default: Helminstall.sh # Relative to the blueprint file.
+            env_vars:
+              default: &env_vars
+                cwd: { get_property: [ SELF, cwd ] }
+                args: { get_property: [ SELF, args ] }
+            fabric_env:
+              default: &fabric_env
+                user: { get_property: [ k8s_master, agent_config, user ] }
+                ip: { get_property: [ k8s_master, agent_config, ip ] }
+                key: { get_property: [ k8s_master, agent_config, key ] }
+        stop:
+          implementation: fabric.fabric_plugin.tasks.run_script
+          inputs:
+            script_path:
+              default: Helmdelete.sh
+            env_vars: 
+              default: *env_vars
+            fabric_env:
+              default: *fabric_env
+
+node_templates:
+# This is a Agent-solution or a fabric solution.
+  k8s_master:
+     type: cloudify.nodes.Compute
+     properties:
+       ip: { get_input: k8s_master_ip }
+       agent_config:
+         install_method: { get_input: install_method } # False for Fabric.
+         key: { get_input: path_to_key }
+         user: { get_input: agent_user }
+
+  mso:
+    type: cloudify.nodes.Helm
+    properties:
+      args:
+      - onap
+      - mso
+    relationships:
+      - type: cloudify.relationships.contained_in
+        target: k8s_master 
+  
+  policy:
+    type: cloudify.nodes.Helm
+    properties:
+      args:
+      - onap
+      - policy
+    relationships:
+      - type: cloudify.relationships.contained_in # For fabric use connected_to
+        target: k8s_master
